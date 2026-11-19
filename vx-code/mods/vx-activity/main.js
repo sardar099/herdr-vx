@@ -4,11 +4,11 @@
 // The shown view gets an accent bar; clicking it again hides the side bar, like VS Code.
 // Below: Graph (the vx-graph tab of the context repo) and Settings.
 // props { title: true }: the side bar's title row (EXPLORER, SOURCE CONTROL, …) above the views.
-// Keys: vx-activity.explorer / scm / ci / spaces / agents show that view; vx-activity.panel
+// Docker shows how many containers run. Keys: vx-activity.explorer / scm / ci / docker / spaces / agents show that view; vx-activity.panel
 // shows or hides the bottom panel (⌘J).
 import { View, div } from "gpui-kit";
 import { v_flex } from "gpui-base";
-import { theme, layout, run, shared, setShared, agents, nextCommand, notify, checking, props } from "herdr";
+import { theme, layout, run, shared, setShared, agents, nextCommand, notify, checking, props, spaces, panes } from "herdr";
 import { ctx, repoTop, baseName, workspace } from "./ws.js";
 import { showInViewer } from "./tabs.js";
 import { Icon } from "./ui.js";
@@ -21,6 +21,8 @@ const VIEWS = [
   { id: "search", icon: "search", title: "Search (⌘⇧F)", name: "Search" },
   { id: "scm", icon: "branch", title: "Source Control (⌘⇧G)", name: "Source Control" },
   { id: "ci", icon: "ci", title: "CI / CD", name: "CI / CD" },
+  { id: "docker", icon: "container", title: "Docker (⌘⌥D)", name: "Docker" },
+  { id: "http", icon: "globe", title: "HTTP Client (⌘⌥R)", name: "HTTP Client" },
   { id: "spaces", icon: "layers", title: "Spaces", name: "Spaces" },
   { id: "agents", icon: "bot", title: "Agents", name: "Agents" },
 ];
@@ -45,6 +47,7 @@ class VxActivity extends View {
         if (["problems", "terminal", "ports"].includes(c)) this.panelView(c);
         if (c === "checks") this.panelView("problems", "vx-panel.checks", cx);
         if (c === "newterm") this.panelView("terminal", "vx-panel.new", cx);
+        if (c === "devtools") this.openDevtools();
         cx.notify();
       }
     });
@@ -84,6 +87,14 @@ class VxActivity extends View {
     if (then) cx.timer.after(600, () => run(then));
   }
 
+  // The Dev Tools tab: the one already open in this space, or a new one.
+  openDevtools() {
+    const space = spaces().find((s) => s.active);
+    const tab = shared("vx.devtools.tab");
+    if (tab && space?.tabs?.some((t) => t.id === tab) && panes().some((p) => p.tab === tab && p.mod === "vx-devtools")) return run("tab.select", { id: tab });
+    run("tab.new", { name: "Dev Tools", mod: "vx-devtools", props: {}, ...(space ? { space: space.id } : {}) });
+  }
+
   openGraph(cx) {
     const c = ctx();
     if (!c.cwd) return notify({ title: "No repo to graph", body: "Pick a repo in the Explorer, or focus a terminal inside one." });
@@ -102,7 +113,8 @@ class VxActivity extends View {
     const kinds = roots.map((r) => ci[r.path]?.kind).filter(Boolean);
     const ciDot = kinds.includes("failure") ? t.ansi1 : kinds.includes("running") ? t.ansi4 : null;
     const waiting = (agents() ?? []).filter((a) => a.status === "blocked" || a.status === "done").length;
-    return { scm: changed ? String(changed > 999 ? "999+" : changed) : null, ci: ciDot, agents: waiting ? String(waiting) : null };
+    const dk = shared("vx.docker.summary");
+    return { scm: changed ? String(changed > 999 ? "999+" : changed) : null, ci: ciDot, agents: waiting ? String(waiting) : null, docker: dk?.running ? String(dk.running) : null };
   }
 
   item(t, id, icon, title, on, onClick, badge) {
@@ -135,6 +147,7 @@ class VxActivity extends View {
     return v_flex().id("vx-activity").size_full().items_center().bg(t.canvas ?? t.chrome)
       .children(VIEWS.filter((v) => present.has(v.id)).map((v) => this.item(t, v.id, v.icon, v.title, on === v.id, () => this.click(v.id), b[v.id] ?? null)))
       .child(div().flex_1())
+      .child(this.item(t, "devtools", "wrench", "Dev Tools (⌘⌥T for the quick popup)", false, () => this.openDevtools(), null))
       .child(this.item(t, "graph", "git-commit", "Commit Graph of the context repo", false, (cx) => this.openGraph(cx), null))
       .child(this.item(t, "settings", "gear", "Settings", false, () => run("app.settings"), null));
   }

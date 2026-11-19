@@ -6,7 +6,7 @@
 // Quick Open is a popup copy (props { goto }): quickopen.js.
 import { View, div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { theme, layout, run, window, settings, openOverlay, props, nextCommand, checking, spaces } from "herdr";
+import { theme, layout, run, window, settings, openOverlay, props, nextCommand, checking, spaces, notify } from "herdr";
 import { workspace, ctx } from "./ws.js";
 import { quickMethods, QO_ROW, QO_ROWS, QO_HEAD } from "./quickopen.js";
 import { emptyNav, navVisit, navStep } from "./nav-core.js";
@@ -32,7 +32,9 @@ class VxTitlebar extends View {
         if (c === "commands") this.openGoto("> ");
         if (c === "symbols") this.openGoto("@");
         if (c === "line") this.openGoto(":");
+        if (c === "plans") this.openGoto("~");
         if (c === "help") this.openGoto("?");
+        if (c === "chat") this.toggleChat();
         if (c === "back") this.go(-1);
         if (c === "forward") this.go(1);
         cx.notify();
@@ -68,6 +70,16 @@ class VxTitlebar extends View {
     return Boolean(h && navStep(h, step, new Set((space.tabs ?? []).map((t) => t.id))));
   }
 
+  // The chat column (vx-chat), VS Code's secondary side bar: show it and put the keyboard in
+  // its box, or hide it.
+  toggleChat() {
+    const chat = find(layout(), "chat");
+    if (!chat) return notify({ title: "No chat panel in this layout", level: "warning" });
+    if (!chat.hidden) return run("layout.hide", { id: "chat" });
+    run("layout.show", { id: "chat" });
+    run("vx-chat.focus");
+  }
+
   // Quick Open sits over the command center, like VS Code's.
   openGoto(query = "") {
     const width = Math.round(Math.min(720, Math.max(440, this.width * 0.42)));
@@ -91,6 +103,7 @@ class VxTitlebar extends View {
     const side = find(root, "sidebar");
     const bottom = find(root, "bottom");
     const right = find(root, "panel");
+    const chat = find(root, "chat");
     const center = Math.min(520, Math.max(200, this.width * 0.34));
     return h_flex().id("vx-titlebar").size_full().items_center().bg(t.canvas ?? t.chrome).text_size(TEXT.small)
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.width) > 4) { this.width = size.width; cx.notify(); } })
@@ -108,11 +121,17 @@ class VxTitlebar extends View {
         .hover((s) => s.bg(t.hover).text_color(t.muted)).tooltip("Search files by name (⌘P) · > for commands · ? for help")
         .on_mouse_down("left", stop).on_click(() => this.openGoto())
         .child(Icon("search", 12)).child(div().truncate().child(ws?.file ? `${label} (Workspace)` : label)))
+      .when(Boolean(chat), (el) => el.child(h_flex().id("tb-chat").h(24).ml(6).px(8).gap(5).flex_none().items_center().rounded(6).cursor_pointer()
+        .bg(chat && !chat.hidden ? t.selected : "#00000000").text_color(chat && !chat.hidden ? t.foreground : t.muted)
+        .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Claude Chat (⌘⌥I)")
+        .on_mouse_down("left", stop).on_click(() => this.toggleChat())
+        .child(Icon("sparkles", 13).text_color(t.accent)).child(div().text_size(TEXT.small).child("Chat"))))
       .child(h_flex().flex_1().min_w(0).h_full().pr(8).gap(2).items_center().justify_end()
         .child(toggle("look", "layout", "Customize Layout (Settings › Look)", false, () => run("app.settings", { section: "look" })))
         .when(Boolean(side), (el) => el.child(toggle("side", "sidebar", "Toggle Side Bar (⌘B)", !side.hidden, () => run("layout.toggle", { id: "sidebar" }))))
         .when(Boolean(bottom), (el) => el.child(toggle("bottom", "panel", "Toggle Panel (⌘J)", !bottom.hidden, () => run("vx-activity.panel"))))
         .when(Boolean(right), (el) => el.child(toggle("right", "panel-right", "Toggle Right Panel", !right.hidden, () => run("layout.toggle", { id: "panel" }))))
+        .when(Boolean(chat), (el) => el.child(toggle("chat", "panel-right", "Toggle Secondary Side Bar · Claude Chat (⌘⌥I)", !chat.hidden, () => this.toggleChat())))
         .when(Boolean(w?.buttons), (el) => el
           .child(toggle("min", "minus", "Minimize", false, () => run("window.minimize")))
           .child(toggle("max", "maximize", "Maximize", false, () => run("window.maximize")))

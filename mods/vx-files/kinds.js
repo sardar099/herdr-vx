@@ -22,6 +22,8 @@ function liveLabel(tab, lead) {
 }
 
 const VIEWERS = new Set(["vx-files", "vx-changes", "vx-graph"]);
+// Other vx mods that open as tabs, by their Material icon.
+const MOD_TAB_ICONS = { "vx-docker": "docker", "vx-http": "http", "vx-devtools": "console", "vx-chat": "claude" };
 
 export function describeTab(tab, spaceId) {
   const inTab = panes().filter((p) => p.tab === tab.id);
@@ -59,6 +61,8 @@ export function tabIcon(d, icons, size = 14) {
   const t = theme();
   if (d.kind === "preview" || d.kind === "diff") return d.file ? FileIcon(icons, d.file, { size }) : Icon("file", size).text_color(t.muted);
   if (d.kind === "graph") return Icon("git-commit", size).text_color(t.accent);
+  const modIcon = MOD_TAB_ICONS[d.lead?.mod];
+  if (d.kind === "mod" && modIcon) return image(`mods/vx-icons/icons/${modIcon}.svg`).size(size).flex_none();
   const program = d.lead?.program;
   if (program?.icon) return program.tint ? svg(program.icon).size(size).flex_none().text_color(t.muted) : image(program.icon).size(size).flex_none();
   return Icon("terminal", size).text_color(t.muted);

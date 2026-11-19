@@ -3,6 +3,7 @@
 //            first, then "file results". `name:42` opens at line 42.
 //   :        go to a line of the file in the active tab        @   go to a symbol in it
 //   >        Herdr's and vx's commands with their keys          %   search text in every root
+//   ~        Claude Code's plans (~/.claude/plans), by title; they also join file results
 //   ?        what the prefixes do
 // ↑↓ (wrapping), PageUp / PageDown, Enter opens, ⌘Enter opens to the side, Esc closes. The
 // selected row offers Open to the Side and, for a recent file, Remove from Recently Opened.
@@ -11,12 +12,14 @@
 // scrolls itself (a virtual list's rows can't carry click / hover handlers, which these need).
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
-import { theme, run, closeOverlay, props, shared, setShared, spaces, readTextFile, commands, keys, window } from "herdr";
+import { theme, run, closeOverlay, props, shared, setShared, spaces, readTextFile, commands, keys, window, exec, home } from "herdr";
 import { workspace, git, baseName, ctx, rootFor } from "./ws.js";
 import { showInViewer } from "./tabs.js";
 import { describeTab } from "./kinds.js";
 import { rankFiles, matchPath, runsOf, parseQuery, symbolsOf, commandLabel, keyLabel, actionToRun, prepareFiles, scoreSlice, topFiles, queryWords } from "./quickopen-core.js";
 import { grepArgs, parseGrep, matchSnippet } from "./search-core.js";
+import { LIST_PLANS, parsePlanList, planTitle } from "./plans-core.js";
+import { timeAgo } from "./git-core.js";
 import { TEXT, Icon, FileIcon, tint } from "./ui.js";
 
 export const QO_ROW = 24;
@@ -33,6 +36,20 @@ const VX_COMMANDS = [
   ["vx-activity.search", "View: Show Search"],
   ["vx-activity.scm", "View: Show Source Control"],
   ["vx-activity.ci", "View: Show CI / CD"],
+  ["vx-activity.docker", "View: Show Docker"],
+  ["vx-docker.refresh", "Docker: Refresh"],
+  ["vx-activity.http", "View: Show HTTP Client"],
+  ["vx-http.new", "HTTP: New Request"],
+  ["vx-http.import", "HTTP: Import cURL or Postman…"],
+  ["vx-http.send", "HTTP: Send Request"],
+  ["vx-activity.devtools", "Dev Tools: Open"],
+  ["mod.open:vx-devtools", "Dev Tools: Quick Tool… (paste anything)"],
+  ["vx-titlebar.chat", "Claude: Toggle Chat"],
+  ["vx-chat.new", "Claude: New Chat"],
+  ["vx-chat.scope", "Claude: Choose Folder (repo, whole workspace…)"],
+  ["vx-chat.model", "Claude: Choose Model…"],
+  ["vx-chat.effort", "Claude: Choose Effort…"],
+  ["vx-chat.mode", "Claude: Choose Permission Mode…"],
   ["vx-activity.spaces", "View: Show Spaces"],
   ["vx-activity.agents", "View: Show Agents"],
   ["vx-activity.panel", "View: Toggle Panel"],
@@ -47,6 +64,7 @@ const VX_COMMANDS = [
   ["vx-files.save", "File: Save"],
   ["vx-titlebar.symbols", "Go to Symbol in Editor…"],
   ["vx-titlebar.line", "Go to Line…"],
+  ["vx-titlebar.plans", "Claude: Open Plan…"],
   ["vx-titlebar.back", "Go Back"],
   ["vx-titlebar.forward", "Go Forward"],
 ];
@@ -56,6 +74,7 @@ const HELP = [
   ["@", "Go to Symbol in Editor"],
   [">", "Show and Run Commands"],
   ["%", "Search for Text"],
+  ["~", "Open a Claude Plan"],
 ];
 const SYMBOL_LOOK = {
   class: ["◆", "ansi3"], interface: ["◇", "ansi4"], enum: ["E", "ansi3"], type: ["T", "ansi4"],
@@ -90,7 +109,20 @@ export const quickMethods = {
     this.query.focus();
     this.current = this.currentFile();
     this.loadFiles(cx);
+    this.loadPlans(cx);
     this.changed(cx);
+  },
+
+  // Claude Code's plans, titled by their first heading.
+  loadPlans(cx) {
+    const dir = `${home()}/.claude/plans`;
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", LIST_PLANS, "vx-plans", dir]).catch(() => null);
+      const list = r?.code === 0 ? parsePlanList(r.stdout) : [];
+      for (const p of list) p.title = planTitle(await readTextFile(`${dir}/${p.name}`).catch(() => null), p.name);
+      this.plans = { dir, list };
+      this.changed(cx, true);
+    });
   },
 
   roots() {
@@ -233,6 +265,20 @@ export const quickMethods = {
     if (q.mode === "help") {
       return HELP.map(([prefix, what]) => ({ kind: "help", key: `h:${prefix}`, prefix, icon: { glyph: prefix || "…", color: "accent" }, label: [{ text: what, hit: false }], desc: [] }));
     }
+    if (q.mode === "plans" || q.mode === "files") {
+      const pl = this.plans;
+      const planRow = ({ p, m }, i, group) => ({
+        kind: "file", key: `p:${p.name}`, file: { root: { name: "Claude plans", path: pl.dir }, rel: p.name }, title: p.title, group: i === 0 ? group : null,
+        icon: { file: p.name }, label: runsOf(p.title, m?.at ?? []), desc: [{ text: p.name, hit: false }], right: timeAgo(p.at),
+      });
+      if (q.mode === "plans") {
+        if (!pl) return [{ kind: "note", key: "n", label: [{ text: "Reading plans…", hit: false }], desc: [] }];
+        const hits = q.text ? pl.list.map((p) => ({ p, m: matchPath(p.title, q.text) ?? (matchPath(p.name, q.text) ? { at: [] } : null) })).filter((x) => x.m) : pl.list.map((p) => ({ p, m: null }));
+        if (!hits.length) return [{ kind: "note", key: "n", label: [{ text: pl.list.length ? "No matching plans." : "No plans yet. Claude writes one in plan mode.", hit: false }], desc: [] }];
+        return hits.map((h, i) => planRow(h, i, `claude plans (${hits.length})`));
+      }
+      this.planHits = q.text && pl ? pl.list.map((p) => ({ p, m: matchPath(p.title, q.text) })).filter((x) => x.m).sort((a, b) => b.m.score - a.m.score).slice(0, 5).map((h, i) => planRow(h, i, "claude plans")) : [];
+    }
     if (q.mode === "commands") {
       const list = commands() ?? [];
       const bound = keys() ?? [];
@@ -298,6 +344,7 @@ export const quickMethods = {
     const out = [
       ...recentHits.map((it, i) => ({ ...fileRow(it, i === 0 ? "recently opened" : null, it.at), recent: true })),
       ...all.map((it, i) => fileRow(it, i === 0 ? "file results" : null, it.at)),
+      ...(this.planHits ?? []),
     ];
     const ranking = !this.prepared || this.fileHits?.text !== q.text;
     if (!out.length) return [{ kind: "note", key: "n", label: [{ text: ranking ? "Searching…" : "No matching results", hit: false }], desc: [] }];
@@ -318,13 +365,13 @@ export const quickMethods = {
     this.refresh(cx);
   },
 
-  openFile(file, line, side) {
+  openFile(file, line, side, title) {
     this.remember(file);
     const value = { root: file.root.path, on: file.on ?? null, rel: file.rel, ...(line ? { line } : {}) };
     if (side) {
       const space = spaces().find((s) => s.active);
       run("pane.split", { direction: "right", mod: "vx-files", props: { mode: "view", space: space?.id, fixed: true, file: { root: value.root, on: value.on, rel: value.rel }, ...(line ? { line } : {}) } });
-    } else showInViewer("vx-files", value, baseName(file.rel));
+    } else showInViewer("vx-files", value, title ?? baseName(file.rel));
   },
 
   choose(i, cx, side = false) {
@@ -338,7 +385,7 @@ export const quickMethods = {
       return;
     }
     this.close();
-    if (row.kind === "file" || row.kind === "line") return this.openFile(row.file, row.line, side);
+    if (row.kind === "file" || row.kind === "line") return this.openFile(row.file, row.line, side, row.title);
     if (row.kind === "command") {
       setShared(CMD_RECENT_KEY, [row.action, ...(shared(CMD_RECENT_KEY) ?? []).filter((a) => a !== row.action)].slice(0, 12));
       const r = actionToRun(row.action, commands() ?? []);

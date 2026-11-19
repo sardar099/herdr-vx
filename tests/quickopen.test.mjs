@@ -30,6 +30,8 @@ test("runsOf splits a label into hit / plain runs", () => {
 
 test("parseQuery: prefixes and file:line", () => {
   assert.deepEqual(parseQuery("> tab new"), { mode: "commands", text: "tab new" });
+  assert.deepEqual(parseQuery("~ docker"), { mode: "plans", text: "docker" });
+  assert.deepEqual(parseQuery("~"), { mode: "plans", text: "" });
   assert.deepEqual(parseQuery("@render"), { mode: "symbols", text: "render" });
   assert.deepEqual(parseQuery(":42"), { mode: "line", text: "", line: 42, col: null });
   assert.deepEqual(parseQuery(":12:5"), { mode: "line", text: "", line: 12, col: 5 });

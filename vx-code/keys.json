@@ -9,6 +9,10 @@
     "ctrl-`": "vx-activity.panel",
     "cmd-e": "vx-tabs.switch",
     "cmd-\\": "pane.split:right",
-    "cmd-s": "vx-files.save"
+    "cmd-s": "vx-files.save",
+    "cmd-alt-d": "vx-activity.docker",
+    "cmd-alt-r": "vx-activity.http",
+    "cmd-alt-t": "mod.open:vx-devtools",
+    "cmd-alt-i": "vx-titlebar.chat"
   }
 }

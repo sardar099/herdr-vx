@@ -7,7 +7,7 @@
 // A viewer value with { line } (Search, Problems) selects and scrolls to that line.
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, TextView, VirtualListScrollHandle, EditorState, Editor } from "gpui-base";
-import { theme, readTextFile, writeTextFile, exec, appHome, settings, shared, setShared, notify } from "herdr";
+import { theme, readTextFile, writeTextFile, exec, appHome, settings, shared, setShared, notify, props, panes, spaces, run, home } from "herdr";
 import { git, bump } from "./ws.js";
 import { parseBlame, heat, shortAge, NOT_COMMITTED } from "./blame-core.js";
 import { parseLog, LOG_FORMAT } from "./git-core.js";
@@ -38,6 +38,10 @@ export const previewMethods = {
     this.mdCode = false;
     this.blameOn = p.blame === true || localStorage.getItem("blame") === "1";
     if (Number.isInteger(p.line)) this.selLine = p.line;
+    if (p.edit) this.wantEdit = true;
+    // Opened by bin/vx-edit (an $EDITOR for Claude's Ctrl+G): it waits for Done or for the tab
+    // to close, told through a marker file named by this token.
+    if (typeof p.wait === "string" && /^[\w-]{1,64}$/.test(p.wait)) this.waitToken = p.wait;
     if (p.history === "file" || p.history === "line") this.wantHistory = p.history;
     cx.timer.every(POLL_MS, (cx) => this.syncPreview(cx, true));
     this.syncPreview(cx);
@@ -65,8 +69,28 @@ export const previewMethods = {
     this.propsFile = value;
   },
 
+  // A tab opened straight onto a fixed file (a Claude plan from a toast) isn't in vx.tabs.kept,
+  // so the tab bar and breadcrumbs would describe the space's preview instead. Register it:
+  // this pane's tab if props name the pane, else the active tab when it holds a vx-files pane.
+  registerFixed() {
+    if (this.registered || !this.fixed || !this.propsFile) return;
+    const mine = props()?.pane;
+    let tab = mine ? panes().find((p) => p.pane === mine)?.tab : null;
+    if (!tab) {
+      const active = spaces().find((s) => s.id === this.viewSpace)?.tabs?.find((t) => t.active)?.id;
+      if (active && panes().some((p) => p.tab === active && p.mod === MOD)) tab = active;
+    }
+    if (!tab) return;
+    this.registered = true;
+    this.myTab = tab;
+    const kept = keptTabs();
+    if (kept[tab]?.value?.rel === this.propsFile.rel && kept[tab]?.value?.root === this.propsFile.root) return;
+    setShared("vx.tabs.kept", { ...kept, [tab]: { mod: MOD, value: { root: this.propsFile.root, on: this.propsFile.on ?? null, rel: this.propsFile.rel } } });
+  },
+
   syncPreview(cx, poll = false) {
     this.followKept();
+    this.registerFixed();
     // Opened straight onto a file (tab.new with props.file): share it as the space's preview, so
     // the tab bar, breadcrumbs and Timeline see it.
     if (!this.fixed && this.propsFile && !viewerValue(MOD, this.viewSpace) && this.viewSpace)
@@ -77,6 +101,11 @@ export const previewMethods = {
     if (Number.isInteger(v.line) && v.at && v.at !== this.jumpAt && !this.fixed) {
       this.jumpAt = v.at;
       this.jumpLine = v.line;
+    }
+    // An edit request (Claude Plans' Edit): open the editor once the text is in.
+    if (v.edit && v.edit !== this.editAt) {
+      this.editAt = v.edit;
+      this.wantEdit = true;
     }
     const key = `${v.on ?? ""}|${v.root}/${v.rel}`;
     if (key !== this.fileKey) {
@@ -89,6 +118,7 @@ export const previewMethods = {
       this.mdCode = false;
       this.selLine = this.firstFileSeen ? null : this.selLine ?? null;
       this.editor = null;
+      this.diskChanged = false;
       this.firstFileSeen = true;
       this.blame = null;
       this.heat = null;
@@ -130,6 +160,8 @@ export const previewMethods = {
         if (text === null) this.problem = "This file is no longer there.";
         else if (text.includes("\0")) this.problem = "Binary file.";
         else if (text !== this.text) {
+          // Rewritten on disk while you edit (Claude updating its plan): say so; Save would refuse.
+          if (this.editor && this.text !== undefined && text !== this.saved) this.diskChanged = true;
           this.problem = null;
           this.text = text;
           const all = text.replace(/\r/g, "").replace(/\t/g, "    ").split("\n");
@@ -147,6 +179,11 @@ export const previewMethods = {
             this.openHistory(this.wantHistory, cx);
             this.wantHistory = null;
           }
+        }
+        if (this.wantEdit && this.text !== undefined && this.text !== null && !this.editor) {
+          this.wantEdit = false;
+          this.mdCode = true;
+          this.startEdit(cx);
         }
         // Changed lines since HEAD (an untracked file is all new).
         const st = await git(["status", "--porcelain", "--", f.rel], { cwd: f.root, on: f.on }).catch(() => null);
@@ -324,8 +361,56 @@ export const previewMethods = {
     }
     this.editor?.release();
     this.editor = null;
+    this.diskChanged = false;
     this.setDirty(false);
     cx.notify();
+  },
+
+  // The file changed on disk under the editor: take the disk version, or keep yours (the next
+  // save then overwrites the disk version on purpose).
+  loadDisk(cx) {
+    if (!this.editor) return;
+    this.editor.set_value(this.text);
+    this.saved = this.text;
+    this.diskChanged = false;
+    this.setDirty(false);
+    cx.notify();
+  },
+
+  keepMine(cx) {
+    this.saved = this.text;
+    this.diskChanged = false;
+    this.setDirty(Boolean(this.editor) && this.editor.value() !== this.saved);
+    cx.notify();
+  },
+
+  // vx-edit is waiting: save what's unsaved, tell it we're done, close the tab.
+  doneWaiting(cx) {
+    const f = this.file;
+    cx.spawn(async (cx) => {
+      if (this.editor && f && this.editor.value() !== this.saved) {
+        const text = this.editor.value();
+        try {
+          await writeTextFile(`${f.root}/${f.rel}`, text, this.saved);
+          this.saved = text;
+          this.text = text;
+          this.setDirty(false);
+        } catch (e) {
+          notify({ title: "Not saved", body: String(e?.message ?? e), level: "error", timeout: 8000 });
+          cx.notify();
+          return;
+        }
+      }
+      await this.signalDone();
+      if (this.myTab) run("tab.close", { id: this.myTab });
+      cx.notify();
+    });
+  },
+
+  async signalDone() {
+    if (!this.waitToken || this.waitDone) return;
+    this.waitDone = true;
+    await exec("sh", ["-c", 'mkdir -p "$1" && : > "$1/$2.done"', "vx-edit", `${home()}/.local/state/vx-edit`, this.waitToken]).catch(() => {});
   },
 
   revert(cx) {
@@ -345,6 +430,7 @@ export const previewMethods = {
         await writeTextFile(`${f.root}/${f.rel}`, text, this.saved);
         this.saved = text;
         this.text = text;
+        this.diskChanged = false;
         this.setDirty(false);
         bump(f.root);
         notify({ title: `Saved ${f.rel.split("/").pop()}`, level: "success", timeout: 1500 });
@@ -375,11 +461,11 @@ export const previewMethods = {
         .child(IconButton({ id: "pv-blame", icon: "blame", label: this.blameOn ? "Hide blame" : "Blame (author · age per line, heatmap)", active: Boolean(this.blameOn), onClick: (cx) => this.toggleBlame(cx), size: 22 }))
         .child(IconButton({ id: "pv-hist", icon: "history", label: "File history", active: this.history?.kind === "file", onClick: (cx) => (this.history?.kind === "file" ? ((this.history = null), cx.notify()) : this.openHistory("file", cx)), size: 22 }))
         .child(IconButton({ id: "pv-lhist", icon: "line-history", label: this.selLine ? `History of line ${this.selLine}` : "Click a line, then show its history", disabled: !this.selLine, active: this.history?.kind === "line", onClick: (cx) => this.openHistory("line", cx), size: 22 })))
-      .when(!f.on && !IMAGE.test(f.rel) && (!md || this.mdCode) && this.text !== undefined, (el) => el
+      .when(!f.on && !IMAGE.test(f.rel) && this.text !== undefined, (el) => el
         .when(Boolean(this.editor) && this.editor?.value() !== this.saved, (e2) => e2
           .child(div().id("pv-revert").px(8).h(22).flex().items_center().rounded(5).cursor_pointer().text_size(TEXT.caption).text_color(t.muted).hover((st) => st.bg(t.hover)).on_click((_e, cx) => this.revert(cx)).child("Revert"))
           .child(div().id("pv-save").px(8).h(22).flex().items_center().rounded(5).cursor_pointer().text_size(TEXT.caption).bg(t.solid ?? t.accent).text_color(t.solid_foreground ?? t.accent_foreground).on_click((_e, cx) => this.save(cx)).child("Save ⌘S")))
-        .child(IconButton({ id: "pv-edit", icon: "pencil", label: this.editor ? "Stop editing" : "Edit this file", active: Boolean(this.editor), onClick: (cx) => (this.editor ? this.stopEdit(cx) : this.startEdit(cx)), size: 22 })))
+        .child(IconButton({ id: "pv-edit", icon: "pencil", label: this.editor ? "Stop editing" : "Edit this file", active: Boolean(this.editor), onClick: (cx) => { if (this.editor) this.stopEdit(cx); else { this.mdCode = true; this.startEdit(cx); } }, size: 22 })))
       .when(!f.on, (el) => el.child(IconButton({ id: "pv-open", icon: "external", label: "Open in default app", onClick: () => exec("open", ["--", abs]).catch(() => {}), size: 22 }))));
     if (this.blameOn && this.blameError && !md) root.child(div().px(10).py(4).text_size(TEXT.caption).text_color(t.dim).child(this.blameError));
     // The selected line's full blame, like GitLens' current-line annotation.
@@ -393,6 +479,15 @@ export const previewMethods = {
       .when(!NOT_COMMITTED.test(sb.sha), (el) => el.child(h_flex().id("pv-sb-open").px(6).h(18).items_center().rounded(4).cursor_pointer().text_color(t.accent).hover((s) => s.bg(t.hover))
         .on_click(() => showInViewer("vx-changes", { root: f.root, on: f.on ?? null, path: f.rel, scope: "commit", sha: sb.sha, subject: sb.summary }, f.rel.split("/").pop()))
         .child("open commit diff"))));
+    if (this.waitToken && !this.waitDone) root.child(h_flex().h(30).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border).bg(tint(t.accent)).text_size(TEXT.small)
+      .child(Icon("sparkles", 13).text_color(t.accent))
+      .child(div().flex_1().min_w(0).truncate().child("Waiting for you: edit this file, then click Done to hand it back."))
+      .child(div().id("pv-wait-done").px(10).h(22).flex().items_center().rounded(5).cursor_pointer().text_size(TEXT.caption).bg(t.solid ?? t.accent).text_color(t.solid_foreground ?? t.accent_foreground).on_click((_e, cx) => this.doneWaiting(cx)).child("Done")));
+    if (this.editor && this.diskChanged) root.child(h_flex().h(30).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border).bg(tint(t.ansi3)).text_size(TEXT.small)
+      .child(Icon("alert", 13).text_color(t.ansi3))
+      .child(div().flex_1().min_w(0).truncate().child("This file changed on disk while you were editing."))
+      .child(div().id("pv-disk-load").px(8).h(22).flex().items_center().rounded(5).cursor_pointer().text_size(TEXT.caption).bg(t.solid ?? t.accent).text_color(t.solid_foreground ?? t.accent_foreground).on_click((_e, cx) => this.loadDisk(cx)).child("Load disk version"))
+      .child(div().id("pv-disk-keep").px(8).h(22).flex().items_center().rounded(5).cursor_pointer().text_size(TEXT.caption).text_color(t.muted).hover((st) => st.bg(t.hover)).on_click((_e, cx) => this.keepMine(cx)).child("Keep mine")));
     if (this.problem) return root.child(Message(this.problem));
     if (IMAGE.test(f.rel))
       return root.child(this.imageCopy ? h_flex().flex_1().min_h(0).p(16).justify_center().items_center().child(image(this.imageCopy).max_w_full().max_h_full()) : Message("Loading…"));

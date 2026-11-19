@@ -5,6 +5,8 @@
 #   ./sync.sh vx-status           just these mods (themes and layouts too)
 #   ./sync.sh --layout vx-code    also add that layout (layouts/vx-code.json + .svg)
 #
+# bin/ (vx-edit) goes to ~/.local/bin.
+#
 # Themes (themes/*.json) are copied when they differ. A layout is copied when it's new (asked
 # for with --layout) or when the repo's file changed since the last sync: Herdr keeps clicks
 # (sizes, hidden) apart, but vx-panel edits the installed layout itself (layout.set), so an
@@ -71,6 +73,15 @@ for f in "$here"/themes/*.json; do
   n=$(basename "$f")
   if cmp -s "$f" "$home_dir/themes/$n"; then echo "same   theme $n"; continue; fi
   cp "$f" "$home_dir/themes/.$n.tmp" && mv "$home_dir/themes/.$n.tmp" "$home_dir/themes/$n" && echo "synced theme $n"
+done
+
+# Helper programs (bin/: vx-edit) into ~/.local/bin, when different.
+mkdir -p "$HOME/.local/bin"
+for f in "$here"/bin/*; do
+  [ -f "$f" ] || continue
+  n=$(basename "$f")
+  if cmp -s "$f" "$HOME/.local/bin/$n"; then echo "same   bin $n"; continue; fi
+  cp "$f" "$HOME/.local/bin/.$n.tmp" && chmod +x "$HOME/.local/bin/.$n.tmp" && mv "$HOME/.local/bin/.$n.tmp" "$HOME/.local/bin/$n" && echo "synced bin $n"
 done
 
 # Layouts: ours that are installed (or asked for), when the source changed since last sync.

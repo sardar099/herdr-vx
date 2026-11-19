@@ -299,6 +299,7 @@ export const treeMethods = {
   },
 
   menuItems(m) {
+    if (m.plan) return this.planMenuItems(m);
     const abs = `${m.root}/${m.rel}`;
     const local = !m.on;
     const items = [];

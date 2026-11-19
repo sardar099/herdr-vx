@@ -14,7 +14,7 @@ export const LAYOUT_CARDS = {
   "vx-code": {
     layout: "vx-code",
     // Opened as tabs at runtime, so the layout doesn't name them.
-    extra: ["vx-graph"],
+    extra: ["vx-graph", "vx-devtools"],
     themes: ["one-monokai"],
     keys: {
       "layout:vx-code": {
@@ -28,6 +28,10 @@ export const LAYOUT_CARDS = {
         "cmd-e": "vx-tabs.switch",
         "cmd-\\": "pane.split:right",
         "cmd-s": "vx-files.save",
+        "cmd-alt-d": "vx-activity.docker",
+        "cmd-alt-r": "vx-activity.http",
+        "cmd-alt-t": "mod.open:vx-devtools",
+        "cmd-alt-i": "vx-titlebar.chat",
       },
     },
   },

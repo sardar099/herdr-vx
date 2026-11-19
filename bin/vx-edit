@@ -1,0 +1,40 @@
+#!/bin/sh
+# vx-edit FILE: an $EDITOR / $VISUAL for programs that wait for you to finish editing (Claude
+# Code's Ctrl+G on a plan or a prompt, git commit). Inside Herdr it opens FILE in the vx-files
+# preview tab, already editing, and waits until you click Done in that tab or close it. Outside
+# Herdr (no herdr-app window) it runs $VX_EDIT_FALLBACK (default: vi).
+set -eu
+fallback=${VX_EDIT_FALLBACK:-vi}
+[ $# -ge 1 ] || { echo "usage: vx-edit FILE" >&2; exit 2; }
+# Editors are called with extra flags sometimes (+line); the file is the last argument.
+for last in "$@"; do :; done
+file=$last
+case "$file" in /*) ;; *) file="$PWD/$file" ;; esac
+
+status=$(herdr-app status 2>/dev/null) || exec "$fallback" "$@"
+space=$(printf '%s' "$status" | sed -n 's/.*"space": *"\([^"]*\)".*/\1/p' | head -n 1)
+[ -n "$space" ] || exec "$fallback" "$@"
+
+[ -e "$file" ] || : > "$file"
+dir=$(dirname -- "$file")
+base=$(basename -- "$file")
+token="$(date +%s)-$$"
+state="${HOME}/.local/state/vx-edit"
+mkdir -p "$state"
+marker="$state/$token.done"
+rm -f "$marker"
+
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+props=$(printf '{"mode":"view","space":"%s","fixed":true,"edit":true,"wait":"%s","file":{"root":"%s","on":null,"rel":"%s"}}' \
+  "$space" "$token" "$(json_escape "$dir")" "$(json_escape "$base")")
+herdr-app do tab.new --space "$space" --name "$base" --mod vx-files --props "$props" >/dev/null || exec "$fallback" "$@"
+
+echo "Editing $base in Herdr: click Done in its tab (or close the tab) to continue." >&2
+# Wait for the tab to say it's done; give up after 6 hours.
+i=0
+while [ ! -e "$marker" ] && [ $i -lt 43200 ]; do
+  sleep 0.5
+  i=$((i + 1))
+done
+rm -f "$marker"
+exit 0

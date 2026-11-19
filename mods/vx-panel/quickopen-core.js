@@ -145,6 +145,7 @@ export function parseQuery(raw) {
   if (t.startsWith("@")) return { mode: "symbols", text: t.slice(1).trim() };
   if (t.startsWith("%")) return { mode: "text", text: t.slice(1).trim() };
   if (t.startsWith("?")) return { mode: "help", text: "" };
+  if (t.startsWith("~")) return { mode: "plans", text: t.slice(1).trim() };
   if (t.startsWith(":")) {
     const m = /^:(\d+)?(?::(\d+))?/.exec(t);
     return { mode: "line", text: "", line: m?.[1] ? Number(m[1]) : null, col: m?.[2] ? Number(m[2]) : null };

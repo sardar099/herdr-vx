@@ -79,6 +79,21 @@
                       "min": 80
                     },
                     {
+                      "id": "plans",
+                      "type": "block",
+                      "content": {
+                        "mod": "vx-files",
+                        "props": {
+                          "section": "plans",
+                          "block": "plans"
+                        }
+                      },
+                      "size": {
+                        "px": 22
+                      },
+                      "min": 22
+                    },
+                    {
                       "id": "timeline",
                       "type": "block",
                       "content": {
@@ -132,6 +147,20 @@
                     "props": {
                       "panel": true
                     }
+                  }
+                },
+                {
+                  "id": "docker",
+                  "type": "block",
+                  "content": {
+                    "mod": "vx-docker"
+                  }
+                },
+                {
+                  "id": "http",
+                  "type": "block",
+                  "content": {
+                    "mod": "vx-http"
                   }
                 },
                 {
@@ -283,6 +312,32 @@
                 }
               ],
               "padding": 4
+            }
+          ]
+        },
+        {
+          "id": "chat",
+          "type": "column",
+          "size": {
+            "px": 400
+          },
+          "min": 300,
+          "max": 760,
+          "hidden": true,
+          "background": "chrome",
+          "radius": 12,
+          "border": {
+            "width": 1,
+            "color": "raised"
+          },
+          "padding": 4,
+          "children": [
+            {
+              "id": "chat-view",
+              "type": "block",
+              "content": {
+                "mod": "vx-chat"
+              }
             }
           ]
         }
