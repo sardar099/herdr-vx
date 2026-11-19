@@ -24,7 +24,7 @@ Two layouts:
 
 | Mod | Where | What |
 |---|---|---|
-| **vx-workspace** | Explorer | The Explorer: every root of the workspace (Material root-folder icons, branch, status dot) with its file tree, git colours, ignored folders dimmed and a filter across all roots. Add / remove / rename / drag-reorder roots (written to the `.code-workspace` the way VS Code writes it); Open, Recent, New, Save As and Close workspace. |
+| **vx-workspace** | Explorer | The Explorer: every root of the workspace (Material root-folder icons, branch, status dot) with its file tree, git colours, ignored folders dimmed and a filter across all roots. Drag any row (root, file, folder, filter hit) onto a terminal to paste its path. Add / remove / rename / reorder roots (written to the `.code-workspace` the way VS Code writes it); Open, Recent, New, Save As and Close workspace. |
 | **vx-changes** | Source Control | VS Code's Source Control: a commit box with Commit All, Commit & Push / Sync, Amend and a ✨ message written by Claude (`claude -p`); staged / unstaged / merge changes with stage, unstage and discard per file (hover or right-click) and **per hunk** in the diff tab; pull, push, publish, sync, fetch, stash and new branch. Plus GitLens-style Commits (graph lanes, authors, branch and tag pills, incoming / outgoing), Branches (switch, delete), Remotes (check out), Stashes (apply, pop, drop), Tags, and Search & Compare. |
 | **vx-ci** | CI panel (⌘⌥C) | GitLab pipelines (via `glab`) and GitHub Actions runs (via `gh`): runs, jobs by stage, retry, cancel, run a pipeline or dispatch a workflow, download artifacts. |
 | **vx-graph** | centre tab | Commit Graph: branch lanes, branch and tag labels, commit details and their diffs. |

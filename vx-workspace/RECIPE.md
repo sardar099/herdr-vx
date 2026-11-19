@@ -14,7 +14,7 @@ A VS Code-style Explorer for Herdr's Files panel: every folder of a `*.code-work
 
 ## How it behaves
 
-- Click a root: it becomes the **active repo** (shared `vx.active`, which the other vx mods follow) and folds open; double-click opens or focuses a terminal there; drag a root onto another to reorder; right-click: Open in Terminal, Reveal in Finder, Copy Path, Rename…, Move Up / Down, Remove Folder from Workspace, Fetch… (asks first).
+- Click a root: it becomes the **active repo** (shared `vx.active`, which the other vx mods follow) and folds open; double-click opens or focuses a terminal there; drag any row (a root, a file or folder, a filter hit) onto a terminal to paste its quoted path; right-click: Open in Terminal, Reveal in Finder, Copy Path, Rename…, Move Up / Down, Remove Folder from Workspace, Fetch… (asks first).
 - Click a file: preview. Right-click a file: Open Preview, Open with Default App, Reveal, Copy Path / Relative Path.
 - In the preview, ✎ switches to Herdr's code editor; ⌘S (key `vx-files.save`) or Save writes the file only if it didn't change on disk since it was opened; Revert drops the edits. Editing keeps the tab (it stops being the reused preview) and vx-tabs shows a dot while there are unsaved changes (shared `vx.dirty`). A viewer value with `line` (Search, Problems) scrolls there.
 - vx-files `{section: "timeline", block}` is a collapsible side-bar section: the commits of the file in the active tab; a click opens that commit's diff.

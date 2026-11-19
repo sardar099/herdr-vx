@@ -22,7 +22,6 @@ export const explorerMethods = {
     this.entries = new Map(); // "root\0rel" -> [{ name, dir }]
     this.open = new Set(); // "root\0rel" folded open ("" rel = the root itself)
     this.selected = null;
-    this.drag = null;
     this.ignored = new Map(); // root path -> Set of git-ignored relative paths (dimmed)
     this.index = new Map(); // root path -> every file (tracked + new, not ignored), for the filter
     this.showDots = localStorage.getItem("dots") !== "0";
@@ -89,6 +88,7 @@ export const explorerMethods = {
       const name = h.rel.slice(h.rel.lastIndexOf("/") + 1);
       const dir = h.rel.includes("/") ? h.rel.slice(0, h.rel.lastIndexOf("/")) : "";
       rows.push(h_flex().id(`fr-${h.root.path}-${h.rel}`).h(ROW).flex_none().pl(14).pr(8).gap(6).items_center().cursor_pointer().hover((st) => st.bg(t.hover)).text_size(TEXT.body)
+        .drag_paths([`${h.root.path}/${h.rel}`])
         .on_click(() => { setActive(h.root, "pick"); showInViewer("vx-files", { root: h.root.path, on: null, rel: h.rel }, name); })
         .child(FileIcon(this.icons, `${h.root.path}/${h.rel}`, { size: 14 }))
         .child(div().flex_none().max_w(200).truncate().child(name))
@@ -178,25 +178,19 @@ export const explorerMethods = {
       s?.changed ? `${s.changed} changed${s.conflicts ? `, ${s.conflicts} conflicts` : ""}` : s?.branch ? "clean" : "",
       ci ? `CI ${ci.label}${ci.number ? ` #${ci.number}` : ""}` : "",
     ].filter(Boolean).join("\n");
-    const dragging = this.drag && this.drag.from !== index;
+    // Dragging a root drops its path into a terminal, like any row; reordering is the
+    // right-click menu's Move Up / Move Down.
     return h_flex()
       .id(`root-${root.path}`).h(ROW + 2).flex_none().pl(4).pr(8).gap(4).items_center()
       .bg(isActive ? t.selected : "#00000000").when(!isActive, (el) => el.hover((st) => st.bg(t.hover)))
-      .when(Boolean(dragging), (el) => el.border_t(1).border_color(t.accent))
       .cursor_pointer().text_size(TEXT.body)
       .tooltip(`${root.path}\n${detail}`)
+      .drag_paths([root.path])
       .on_mouse_down("left", (e, cx) => {
         cx.stop_propagation();
-        this.drag = { from: index, at: Date.now() };
-        if (e.click_count === 2) {
-          this.drag = null;
-          this.command({ cmd: "terminal", path: root.path });
-        }
+        if (e.click_count === 2) this.command({ cmd: "terminal", path: root.path });
       })
-      .on_mouse_up("left", (_e, cx) => {
-        const d = this.drag;
-        this.drag = null;
-        if (d && d.from !== index) return this.command({ cmd: "move", path: this.ws.roots[d.from].path, to: index });
+      .on_click((_e, cx) => {
         setActive(root, "pick");
         this.toggle(root.path, "", cx);
       })
@@ -221,6 +215,7 @@ export const explorerMethods = {
       .id(`e-${key}`).h(ROW).flex_none().pl(4 + depth * INDENT).pr(8).gap(4).items_center()
       .bg(sel ? t.selected : "#00000000").when(!sel, (el) => el.hover((st) => st.bg(t.hover)))
       .cursor_pointer().text_size(TEXT.body)
+      .drag_paths([`${root.path}/${path}`])
       .on_click((_e, cx) => {
         this.selected = key;
         if (e.dir) this.toggle(root.path, path, cx);

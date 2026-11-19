@@ -329,8 +329,7 @@ class VxWorkspace extends View {
     const narrow = this.width < 160;
     const ws = this.ws;
     const root = v_flex().id(MOD).size_full().min_h(0).bg(t.background).text_color(t.foreground)
-      .on_size_change((size, cx) => { if (Math.abs(size.width - this.width) > 4) { this.width = size.width; cx.notify(); } })
-      .on_mouse_up("left", () => { this.drag = null; });
+      .on_size_change((size, cx) => { if (Math.abs(size.width - this.width) > 4) { this.width = size.width; cx.notify(); } });
     const head = h_flex().id("ws-head").h(36).flex_none().pl(narrow ? 0 : 12).pr(narrow ? 0 : 6).gap(2).items_center().border_b(1).border_color(t.border)
       .when(narrow, (el) => el.justify_center().child(Icon("layers", 13)))
       .when(!narrow, (el) => el
