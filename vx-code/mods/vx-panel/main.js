@@ -55,7 +55,12 @@ class VxPanel extends View {
         this.loadPorts(cx);
         cx.timer.every(3000, (cx) => this.loadPorts(cx));
       }
-      if (this.view === "problems") cx.timer.every(1500, (cx) => cx.notify());
+      if (this.view === "problems") cx.timer.every(1500, (cx) => {
+        const key = JSON.stringify([problems(), checks(), ctx().root?.name ?? ctx().cwd ?? null]);
+        if (key === this.lastProblems) return;
+        this.lastProblems = key;
+        cx.notify();
+      });
       return;
     }
     if (checking()) return;
@@ -132,7 +137,13 @@ class VxPanel extends View {
         }
       });
     }
-    cx.notify();
+    // Repaint only when the header would change (the tidy tick runs every second).
+    const cur = lv.get(shown);
+    const key = JSON.stringify([visible, next.view, shown, list, cur?.agent ?? null, cur?.cwd ?? null]);
+    if (key !== this.lastTidy) {
+      this.lastTidy = key;
+      cx.notify();
+    }
   }
 
   async start() {

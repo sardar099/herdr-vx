@@ -33,7 +33,13 @@ class VxTabs extends View {
     if (p.menu) return void (this.menu = p.menu);
     if (p.breadcrumbs) {
       this.crumbs = true;
-      if (!checking()) cx.timer.every(400, (cx) => cx.notify());
+      // Repaint only when the crumbs would change (every repaint redraws the whole window).
+      if (!checking()) cx.timer.every(400, (cx) => {
+        const key = this.crumbsKey();
+        if (key === this.lastCrumbs) return;
+        this.lastCrumbs = key;
+        cx.notify();
+      });
       return;
     }
     if (p.list) {
@@ -291,6 +297,15 @@ class VxTabs extends View {
   }
 
   // ── breadcrumbs ────────────────────────────────────────────────────────────────────────
+  // What the strip shows, as a string: the active tab and what it points at.
+  crumbsKey() {
+    const space = spaces().find((s) => s.active);
+    const tab = space?.tabs?.find((x) => x.active);
+    if (!tab) return "";
+    const d = describeTab(tab, space.id);
+    return JSON.stringify([tab.id, tab.name, d.kind, d.value?.root, d.file, d.value?.scope, d.value?.sha, d.lead?.cwd, (workspace()?.roots ?? []).map((r) => r.path)]);
+  }
+
   renderCrumbs() {
     const t = theme();
     const space = spaces().find((s) => s.active);

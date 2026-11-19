@@ -33,11 +33,16 @@ class VxActivity extends View {
     this.tops = new Map();
     if (p.title) {
       this.title = true;
-      if (!checking()) cx.timer.every(300, (cx) => cx.notify());
+      // The title follows the stack's active view (layout changes don't redraw mods by
+      // themselves): repaint only when it changes, not on every tick.
+      if (!checking()) cx.timer.every(300, (cx) => this.repaintIfChanged(cx, () => find(layout(), STACK)?.active ?? ""));
       return;
     }
     if (checking()) return;
-    cx.timer.every(1500, (cx) => cx.notify());
+    cx.timer.every(1500, (cx) => this.repaintIfChanged(cx, () => {
+      const stack = find(layout(), STACK);
+      return JSON.stringify([(stack?.children ?? []).map((c) => c.id), this.shown(), this.badges(theme())]);
+    }));
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -51,6 +56,14 @@ class VxActivity extends View {
         cx.notify();
       }
     });
+  }
+
+  // Every redraw repaints the whole window: a timer only asks for one when what it shows changed.
+  repaintIfChanged(cx, signature) {
+    const key = signature();
+    if (key === this.lastKey) return;
+    this.lastKey = key;
+    cx.notify();
   }
 
   shown() {
